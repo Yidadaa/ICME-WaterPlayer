@@ -1,18 +1,16 @@
 import json
 import os
-import sqlite3
+import pymongo
 from tqdm import tqdm
 
 class DB:
-    def __init__(self, base_path, video_path, face_path, title_path, db_path, sql_path):
+    def __init__(self, base_path, video_path, face_path, title_path):
         self.base_path = base_path
         self.video_path = video_path
         self.face_path = face_path
         self.title_path = title_path
-        self.db_path = db_path
-        self.sql_path = sql_path
 
-        self.init_db(sql_path, db_path)
+        self.init_db()
         self.insert_base_data()
 
 
@@ -31,22 +29,19 @@ class DB:
     def count_lines(self, path):
         return int(os.popen('wc -l ' + path).read().split(' ')[0])
 
-    def init_db(self, sql_path, db_path):
-        if os.path.exists(db_path):
-            os.remove(db_path)
-        self.conn = sqlite3.connect(db_path)
-        with open(sql_path, 'r') as f:
-            sql = f.read()
-            self.conn.cursor().executescript(sql)
+    def init_db(self):
+        self.db_client = pymongo.MongoClient('mongodb://localhost:27017')
+        self.db = self.db_client['icme']
 
     def insert_base_data(self):
         print('reading: ' + self.base_path)
         total = self.count_lines(self.base_path)
         base_feature = self.load_train_txt(self.base_path)
 
-        cursor = self.conn.cursor()
-        cursor.execute('PRAGMA synchronous = OFF') # 关闭同步写可以大幅提高写入速度
-        cursor.execute('PRAGMA journal_mode = OFF')
+        user_table = self.db['user']
+        author_table = self.db['author']
+        item_table = self.db['item']
+        history_table = self.db['history']
 
         buffer_user = []
         buffer_author = []
@@ -54,26 +49,38 @@ class DB:
         buffer_history = []
         for i in tqdm(base_feature, desc='building db', total=total):
             [uid, user_city, item_id, author_id, item_city, channel, finish, like, music_id, device, time, duration_time] = i
-            buffer_user.append((uid, user_city))
-            buffer_author.append((author_id, ))
-            buffer_item.append((item_id, item_city, duration_time, music_id))
-            buffer_history.append((uid, item_id, author_id, channel, finish, like, device, time))
-
-            if len(buffer_user) > 1000:
-                cursor.executemany('replace into USER values (?, ?)', buffer_user)
-                cursor.executemany('replace into AUTHOR values (?)', buffer_author)
-                cursor.executemany(
-                        'replace into ITEM values (?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL)',
-                        buffer_item)
-                cursor.executemany('insert into PLAY_HISTORY values (?, ?, ?, ?, ?, ?, ?, ?)',
-                        buffer_history)
-                self.conn.commit()
+            buffer_user.append({
+                'uid': uid,
+                'user_city': user_city
+                })
+            buffer_author.append({
+                'author_id': author_id
+                })
+            buffer_item.append({
+                'item_id': item_id,
+                'item_city': item_city,
+                'duration_time': duration_time,
+                'music_id': music_id
+                })
+            buffer_history.append({
+                'uid': uid,
+                'item_id': item_id,
+                'author_id': author_id,
+                'channel': channel,
+                'finish': finish,
+                'like': like,
+                'device': device,
+                'time': time
+                })
+            if len(buffer_user) > 2000:
+                user_table.insert(buffer_user)
+                author_table.insert(buffer_author)
+                item_table.insert(buffer_item)
+                history_table.insert(buffer_history)
                 buffer_user = []
                 buffer_author = []
                 buffer_item = []
                 buffer_history = []
-        cursor.close()
-
 
 if __name__ == '__main__':
     ROOT = './dataset/'
@@ -91,4 +98,4 @@ if __name__ == '__main__':
     # title_feature = load_obj_txt(title_path)
     # init_db('./db_structure.sql', ROOT + 'icme.db')
 
-    db = DB(train_path, video_path, face_path, title_path, db_path, sql_path)
+    db = DB(train_path, video_path, face_path, title_path)

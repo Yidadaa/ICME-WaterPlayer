@@ -2,8 +2,9 @@ import json
 import os
 import pymongo
 from tqdm import tqdm
+from bson.son import SON
 
-from config import *
+import time
 
 class DB:
     def __init__(self, base_path, video_path, face_path, title_path, db_path='mongodb://localhost:27017'):
@@ -39,50 +40,55 @@ class DB:
         total = self.count_lines(self.base_path)
         base_feature = self.load_train_txt(self.base_path)
 
-        user_table = self.db['user']
-        author_table = self.db['author']
-        item_table = self.db['item']
         history_table = self.db['history']
 
-        buffer_user = []
-        buffer_author = []
-        buffer_item = []
         buffer_history = []
         for i in tqdm(base_feature, desc='building db', total=total):
             [uid, user_city, item_id, author_id, item_city, channel, finish, like, music_id, device, time, duration_time] = i
-            buffer_user.append({
-                'uid': uid,
-                'user_city': user_city
-                })
-            buffer_author.append({
-                'author_id': author_id
-                })
-            buffer_item.append({
-                'item_id': item_id,
-                'item_city': item_city,
-                'duration_time': duration_time,
-                'music_id': music_id
-                })
             buffer_history.append({
                 'uid': uid,
+                'user_city': user_city,
                 'item_id': item_id,
+                'item_city': item_city,
                 'author_id': author_id,
                 'channel': channel,
                 'finish': finish,
                 'like': like,
                 'device': device,
-                'time': time
+                'time': time,
+                'duration_time': duration_time,
+                'device': device,
                 })
-            if len(buffer_user) > 2000:
-                user_table.insert(buffer_user)
-                author_table.insert(buffer_author)
-                item_table.insert(buffer_item)
+            if len(buffer_history) > 2000:
                 history_table.insert(buffer_history)
-                buffer_user = []
-                buffer_author = []
-                buffer_item = []
                 buffer_history = []
 
-if __name__ == '__main__':
-    db = DB(train_path, video_path, face_path, title_path)
-    # db.insert_base_data() # 取消这一行的注释，可以重建数据库
+    def build_item_table(self):
+        print('正在处理item_table')
+        st = time.time()
+        item_group = self.db.history.aggregate([
+            {
+                '$group': {
+                    '_id': '$item_id',
+                    'play': {
+                        '$sum': 1,
+                    },
+                    'likes': {
+                        '$sum': '$like'
+                    },
+                    'finish': {
+                        '$sum': '$finish'
+                    }
+                    }
+            },
+            {
+                '$sort': {
+                    'play': -1
+                }
+            },
+            {
+                '$out': 'item'
+            }], allowDiskUse=True)
+        ed = time.time()
+        print('已完成, 耗时:', ed - st, 's, 条目:')
+

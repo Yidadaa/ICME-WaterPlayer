@@ -54,7 +54,7 @@ class DB:
                 'channel': channel,
                 'finish': finish,
                 'like': like,
-                'device': device,
+                'music_id': music_id,
                 'time': time,
                 'duration_time': duration_time,
                 'device': device,
@@ -91,4 +91,57 @@ class DB:
             }], allowDiskUse=True)
         ed = time.time()
         print('已完成, 耗时:', ed - st, 's, 条目:')
+
+    def build_item_group_of(self, name, key):
+        print('正在处理item_group_' + name)
+        st = time.time()
+        item_group = self.db.history.aggregate([
+            {
+                '$project': {
+                    name: 1,
+                    'item_id': 1
+                }
+            },
+            {
+                '$lookup': {
+                    'from': 'item',
+                    'localField': 'item_id',
+                    'foreignField': '_id',
+                    'as': 'item_info'
+                }
+            },
+            {
+                '$addFields': {
+                    'item_info': {
+                        '$arrayElemAt': ['$item_info', 0]
+                    }
+                }
+            },
+            {
+                '$group': {
+                    '_id': '$' + name,
+                    name + '_item_count': {
+                        '$sum': 1,
+                    },
+                    name + '_play_count': {
+                        '$sum': '$item_info.play'
+                    },
+                    name + '_avg_play': {
+                        '$avg': '$item_info.play'
+                    },
+                    name + '_finish_count': {
+                        '$sum': '$item_info.finish'
+                    },
+                    name + '_like_count': {
+                        '$sum': '$item_info.likes'
+                    }
+                }
+            },
+            {
+                '$out': key
+            }
+        ], allowDiskUse=True)
+        ed = time.time()
+        print('已完成, 耗时:', ed - st, 's, 表:', key)
+
 

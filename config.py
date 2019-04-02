@@ -1,0 +1,5 @@
+ROOT = './dataset/'
+train_path = ROOT + 'final_track2_train.txt'
+video_path = ROOT + 'track2_video_features.txt'
+face_path = ROOT + 'track2_face_attrs.txt'
+title_path = ROOT + 'track2_title.txt'

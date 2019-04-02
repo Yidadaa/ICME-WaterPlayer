@@ -3,16 +3,17 @@ import os
 import pymongo
 from tqdm import tqdm
 
+from config import *
+
 class DB:
-    def __init__(self, base_path, video_path, face_path, title_path):
+    def __init__(self, base_path, video_path, face_path, title_path, db_path='mongodb://localhost:27017'):
         self.base_path = base_path
         self.video_path = video_path
         self.face_path = face_path
         self.title_path = title_path
+        self.db_path = db_path
 
         self.init_db()
-        self.insert_base_data()
-
 
     def load_train_txt(self, path):
         with open(path, 'r') as f:
@@ -30,7 +31,7 @@ class DB:
         return int(os.popen('wc -l ' + path).read().split(' ')[0])
 
     def init_db(self):
-        self.db_client = pymongo.MongoClient('mongodb://localhost:27017')
+        self.db_client = pymongo.MongoClient(self.db_path)
         self.db = self.db_client['icme']
 
     def insert_base_data(self):
@@ -83,19 +84,5 @@ class DB:
                 buffer_history = []
 
 if __name__ == '__main__':
-    ROOT = './dataset/'
-
-    train_path = ROOT + 'final_track2_train.txt'
-    video_path = ROOT + 'track2_video_features.txt'
-    face_path = ROOT + 'track2_face_attrs.txt'
-    title_path = ROOT + 'track2_title.txt'
-    sql_path = './db_structure.sql'
-    db_path = ROOT + 'icme.db'
-
-    # base_feature = load_train_txt(train_path)
-    # video_feature = load_obj_txt(video_path)
-    # face_feature = load_obj_txt(face_path)
-    # title_feature = load_obj_txt(title_path)
-    # init_db('./db_structure.sql', ROOT + 'icme.db')
-
     db = DB(train_path, video_path, face_path, title_path)
+    # db.insert_base_data() # 取消这一行的注释，可以重建数据库

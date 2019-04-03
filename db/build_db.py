@@ -3,6 +3,7 @@ import os
 import pymongo
 from tqdm import tqdm
 from bson.son import SON
+import copy
 
 import time
 
@@ -14,6 +15,8 @@ class DB:
         self.title_path = title_path
         self.db_path = db_path
         self.keys = ['uid', 'author_id', 'user_city', 'item_city', 'channel', 'music_id', 'device']
+
+        self.feature_keys = None
 
         self.init_db()
 
@@ -172,6 +175,11 @@ class DB:
             item_count_min = self.min_of(name, name + '_item_count')
             item_count_len = item_count_max - item_count_min + 1 # 防止除以0
 
+            avg_count_max = self.max_of(name, name + '_avg_play')
+            avg_count_min = self.min_of(name, name + '_avg_play')
+            avg_count_len = avg_count_max - avg_count_min + 1 # 防止除以0
+
+
             # 开始处理数据
             # 对item_count和play_count做归一化, 并计算好评率和完成率
             table.aggregate([
@@ -182,6 +190,9 @@ class DB:
                         },
                         name + '_play_norm': {
                             '$divide': ['$' + name + '_play_count', play_count_len]
+                        },
+                        name + '_avg_norm': {
+                            '$divide': ['$' + name + '_avg_play', avg_count_len]
                         },
                         name + '_like_rate': {
                             '$divide': ['$' + name + '_like_count', '$' + name + '_play_count']
@@ -196,3 +207,108 @@ class DB:
                     '$out': name
                 }
             ])
+
+    def process_item_table(self):
+        # 处理item表的数据
+        print('processing item table')
+        play_len = self.max_of('item', 'play') - self.min_of('item', 'play') + 1
+        self.db.item.aggregate([
+            {
+                '$addFields': {
+                    'play_norm': {
+                        '$divide': ['$' + 'play', play_len]
+                    },
+                    'like_rate': {
+                        '$divide': ['$' + 'likes', '$' + 'play']
+                    },
+                    'finish_rate': {
+                        '$divide': ['$' + 'finish', '$' + 'play']
+                    }
+                }
+            },
+            {
+                '$out': 'item'
+            }
+        ])
+
+    def get_data_count(self):
+        # 获取数据总数
+        return self.db['history'].count()
+
+    def make_keys_of(self, name):
+        # 生成某个表的key
+        key_t = ['_finish_rate', '_item_norm', '_play_norm', '_avg_norm', '_like_rate']
+        return [name + k for k in key_t]
+
+    def fetch_according_to(self, obj):
+        # 根据history中字段数据生成特征
+        result = copy.copy(obj)
+        # 得到5*7=35个特征
+        for name in self.keys:
+            the_feature = self.db[name].find_one(
+                { '_id': obj[name] },
+                projection={ '_id': False }
+            )
+            the_feature = the_feature or {}
+            for k in self.make_keys_of(name):
+                if k in the_feature:
+                    result[k] = 1 if the_feature[k] > 1\
+                            else 0 if the_feature[k] < 0\
+                            else the_feature[k]
+                else:
+                    result[k] = 0
+        # 得到item属性数据
+        the_item = self.db.item.find_one({ '_id': obj['item_id'] })
+        the_item = the_item or {}
+        for name in ['play_norm', 'like_rate', 'finish_rate']:
+            result[name] = the_item[name] if name in the_item else 0
+
+        result['is_same_city'] = int(obj['item_city'] == obj['user_city'])
+
+        return result
+
+    def get_feature_keys(self, force_update=False):
+        # 获取特征数据
+        if self.feature_keys is None or force_update:
+            h = self.db.history.find_one(projection={ '_id': False })
+            self.feature_keys = list(self.fetch_according_to(h).keys())
+
+        return self.feature_keys
+
+    def dict2list(self, keys, dict_):
+        result = []
+        for k in keys:
+            result.append(str(dict_[k]))
+        return result
+
+    def escape(self, keys, ekeys):
+        return list(filter(lambda x: x not in ekeys, keys))
+
+    def process_feature_table(self):
+        # 生成特征表
+        htable = self.db.history
+        lookup = {}
+        htable.aggregate([{
+            '$'
+        }])
+
+    def fetch_data(self, path, escape=[]):
+        # 从数据库中获取训练数据
+        history_table = self.db.history
+        N = self.get_data_count()
+        fkeys = self.get_feature_keys()
+        fkeys = self.escape(fkeys, escape) # 删除不要的字段
+        f = open(path, 'w')
+
+        list2str = lambda x: ','.join(x) + '\n'
+
+        # 写入头
+        f.write(list2str(fkeys))
+
+        for h in tqdm(history_table.find(projection={ '_id': False }), total=N):
+            the_feature = self.fetch_according_to(h)
+            the_list = self.dict2list(fkeys, the_feature)
+            f.write(list2str(the_list))
+
+        f.close()
+

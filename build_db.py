@@ -14,8 +14,8 @@ def item_table2file(c):
 
 if __name__ == '__main__':
     db = DB(train_path, video_path, face_path, title_path)
-    db.insert_base_data()
-    db.build_item_table()
+    # db.insert_base_data()
+    # db.build_item_table()
     # item_table2file(db.db.item.find())
     for name in tqdm(['uid', 'author_id', 'user_city', 'item_city', 'channel', 'music_id', 'device']):
-        db.build_item_group_of(name)
+        db.build_item_group_of(name, name)

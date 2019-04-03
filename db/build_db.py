@@ -13,6 +13,7 @@ class DB:
         self.face_path = face_path
         self.title_path = title_path
         self.db_path = db_path
+        self.keys = ['uid', 'author_id', 'user_city', 'item_city', 'channel', 'music_id', 'device']
 
         self.init_db()
 
@@ -144,4 +145,54 @@ class DB:
         ed = time.time()
         print('已完成, 耗时:', ed - st, 's, 表:', key)
 
+    def build_all_group_table(self):
+        for name in tqdm(self.keys):
+            self.build_item_group_of(name, name)
 
+    def max_of(self, name, key):
+        table = self.db[name]
+        max_v = table.find().sort(key, pymongo.DESCENDING).limit(1)
+        return list(max_v)[0][key]
+
+    def min_of(self, name, key):
+        table = self.db[name]
+        min_v = table.find().sort(key, pymongo.ASCENDING).limit(1)
+        return list(min_v)[0][key]
+
+    def process_all_group_table(self):
+        # 获取item group的最大值，最小值并归一化处理
+        print('processing groups')
+        for name in tqdm(self.keys):
+            table = self.db[name]
+            play_count_max = self.max_of(name, name + '_play_count')
+            play_count_min = self.min_of(name, name + '_play_count')
+            play_count_len = play_count_max - play_count_min + 1 # 防止除以0
+
+            item_count_max = self.max_of(name, name + '_item_count')
+            item_count_min = self.min_of(name, name + '_item_count')
+            item_count_len = item_count_max - item_count_min + 1 # 防止除以0
+
+            # 开始处理数据
+            # 对item_count和play_count做归一化, 并计算好评率和完成率
+            table.aggregate([
+                {
+                    '$addFields': {
+                        name + '_item_norm': {
+                            '$divide': ['$' + name + '_item_count', item_count_len]
+                        },
+                        name + '_play_norm': {
+                            '$divide': ['$' + name + '_play_count', play_count_len]
+                        },
+                        name + '_like_rate': {
+                            '$divide': ['$' + name + '_like_count', '$' + name + '_play_count']
+                        },
+                        name + '_finish_rate': {
+                            '$divide': ['$' + name + '_finish_count', '$' + name + '_play_count']
+                        }
+
+                    }
+                },
+                {
+                    '$out': name
+                }
+            ])

@@ -17,5 +17,5 @@ if __name__ == '__main__':
     # db.insert_base_data()
     # db.build_item_table()
     # item_table2file(db.db.item.find())
-    for name in tqdm(['uid', 'author_id', 'user_city', 'item_city', 'channel', 'music_id', 'device']):
-        db.build_item_group_of(name, name)
+    # db.build_all_group_table()
+    db.process_all_group_table()
